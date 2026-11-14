@@ -216,13 +216,32 @@ with st.sidebar:
 items = st.session_state.data["items"]
 selected = next((x for x in items if x["id"] == st.session_state.selected), None)
 if selected is None:
-    left, middle, right = st.columns([1, 2, 1])
-    with middle:
-        if st.button("＋", key="big_add", use_container_width=True, help="도마뱀 또는 준비물 창을 추가합니다"):
-            st.session_state.add_open = not st.session_state.get("add_open", False)
-        st.markdown('<div class="hero"><h1>도마뱀 관리</h1><p>작은 친구들의 하루를 차곡차곡 기록해요.</p></div>', unsafe_allow_html=True)
-    # Target only the central add button, not every button in the app.
-    st.markdown('<style>.st-key-big_add button{font-size:64px!important;min-height:110px;background:#e4efd9}</style>', unsafe_allow_html=True)
+    # Center only the home hero; forms, lists and detail screens keep their layout.
+    st.markdown("""<style>
+    .st-key-home_hero {
+        min-height: calc(100svh - 9rem);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+    .st-key-home_hero > div {width:100%;}
+    .st-key-home_hero .hero h1 {text-align:center;}
+    .st-key-home_hero .hero h1 a {display:none;}
+    .st-key-big_add button {
+        min-height:110px;
+        background:#e4efd9;
+    }
+    .st-key-big_add button p {font-size:64px!important;line-height:1.1;}
+    @media (max-width:640px) {
+        .st-key-home_hero {min-height:calc(100svh - 8rem);}
+    }
+    </style>""", unsafe_allow_html=True)
+    with st.container(key="home_hero"):
+        left, middle, right = st.columns([1, 2, 1])
+        with middle:
+            if st.button("＋", key="big_add", use_container_width=True, help="도마뱀 또는 준비물 창을 추가합니다"):
+                st.session_state.add_open = not st.session_state.get("add_open", False)
+            st.markdown('<div class="hero"><h1>도마뱀 관리</h1><p>작은 친구들의 하루를 차곡차곡 기록해요.</p></div>', unsafe_allow_html=True)
     if st.session_state.get("add_open"):
         with st.form("new_item", clear_on_submit=True):
             kind_label = st.selectbox("창 종류", ["도마뱀", "준비물"])
