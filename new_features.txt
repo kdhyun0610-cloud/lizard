@@ -1,0 +1,150 @@
+HISTORY_BANK = [
+ ("훈민정음을 창제한 왕은?", ["세종", "태종", "정조"], 0),
+ ("임진왜란이 시작된 해는?", ["1592년", "1392년", "1919년"], 0),
+ ("3·1 운동이 일어난 해는?", ["1919년", "1945년", "1894년"], 0),
+ ("고려를 건국한 인물은?", ["왕건", "이성계", "궁예"], 0),
+ ("조선을 건국한 인물은?", ["이성계", "왕건", "정몽주"], 0),
+ ("삼국을 통일한 나라는?", ["신라", "백제", "고구려"], 0),
+ ("동학 농민 운동이 일어난 해는?", ["1894년", "1592년", "1948년"], 0),
+ ("대한민국 임시정부가 1919년 수립된 도시는?", ["상하이", "베이징", "도쿄"], 0),
+ ("을지문덕이 수나라 군대를 물리친 전투는?", ["살수 대첩", "한산도 대첩", "귀주 대첩"], 0),
+ ("정조가 건설한 성은?", ["수원 화성", "행주산성", "남한산성"], 0),
+ ("광복을 맞은 날은?", ["1945년 8월 15일", "1919년 3월 1일", "1950년 6월 25일"], 0),
+ ("고려 시대 몽골의 침입에 맞서 조성한 문화유산은?", ["팔만대장경", "훈민정음", "직지의 최초 간행"], 0)
+]
+ENGLISH_BANK = [
+ (w, choices, 0) for w, choices in [
+ ("significant", ["중요한", "일시적인", "반대의"]),
+ ("consequence", ["결과", "허락", "기원"]),
+ ("maintain", ["유지하다", "버리다", "예측하다"]),
+ ("interpret", ["해석하다", "거절하다", "파괴하다"]),
+ ("evidence", ["증거", "갈등", "관습"]),
+ ("perspective", ["관점", "장애물", "보상"]),
+ ("sustainable", ["지속 가능한", "우연한", "무관한"]),
+ ("assume", ["가정하다", "허락하다", "비교하다"]),
+ ("reluctant", ["꺼리는", "정확한", "풍부한"]),
+ ("enhance", ["향상시키다", "무시하다", "분리하다"]),
+ ("inevitable", ["불가피한", "불확실한", "비효율적인"]),
+ ("diverse", ["다양한", "명백한", "유사한"])
+ ]
+]
+
+
+def week_key(current=None):
+    d = current or today()
+    year, week, _ = d.isocalendar()
+    return f"{year}-W{week:02d}"
+
+
+def start_weekly(data, owner):
+    result = copy.deepcopy(data)
+    games = result.setdefault("weekly_games", [])
+    if any(g["owner"] == owner and g["week"] == week_key() for g in games):
+        raise ValueError("이번 주 게임은 이미 시작했어요.")
+    rng = random.SystemRandom()
+    kind = rng.choice(["penalty", "history", "english"])
+    game = {"id": uuid4().hex, "owner": owner, "week": week_key(), "kind": kind, "done": False}
+    if kind == "penalty":
+        game["keeper"] = rng.randrange(3)
+    else:
+        questions = []
+        for question, choices, correct in rng.sample(HISTORY_BANK if kind == "history" else ENGLISH_BANK, 3):
+            answer = choices[correct]
+            options = rng.sample(choices, len(choices))
+            questions.append({"question": question, "choices": options, "answer": answer})
+        game["questions"] = questions
+    games.append(game)
+    return result
+
+
+def finish_weekly(data, game_id, answers):
+    result = copy.deepcopy(data)
+    game = next(g for g in result.get("weekly_games", []) if g["id"] == game_id)
+    if game["done"] or game["week"] != week_key():
+        raise ValueError("이미 마쳤거나 이번 주 게임이 아닙니다.")
+    if game["kind"] == "penalty":
+        if len(answers) != 1 or type(answers[0]) is not int or answers[0] not in range(3):
+            raise ValueError("슛 방향을 선택하세요.")
+        score = int(answers[0] != game["keeper"])
+        game["shot"] = answers[0]
+    else:
+        if len(answers) != 3 or any(a not in q["choices"] for a, q in zip(answers, game["questions"])):
+            raise ValueError("세 문제에 모두 답해주세요.")
+        score = sum(a == q["answer"] for a, q in zip(answers, game["questions"]))
+        game["answers"] = answers
+    game.update(done=True, score=score)
+    if score:
+        result.setdefault("token_ledger", []).append({"id": uuid4().hex, "owner": game["owner"], "day": today().isoformat(), "amount": score, "reason": "weekly_game", "game_id": game_id, "item_name": "주간 보너스 게임"})
+    return result
+
+
+def render_penalty(game):
+    keeper = [17, 50, 83][game["keeper"]] if game["done"] else 50
+    ball = [17, 50, 83][game.get("shot", 1)]
+    done = game["done"]
+    components.html('''<html><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+    *{box-sizing:border-box}body{margin:0}.field{height:260px;background:repeating-linear-gradient(#418c46 0 35px,#367e3d 35px 70px);position:relative;overflow:hidden;border-radius:18px;border:3px solid white}
+    .crowd{height:45px;background:repeating-linear-gradient(90deg,#293a52 0 7px,#76869d 7px 11px,#32495c 11px 18px)}
+    .goal{position:absolute;left:8%;right:8%;top:38px;height:100px;border:5px solid white;background:repeating-linear-gradient(0deg,transparent 0 14px,#ffffff66 14px 15px),repeating-linear-gradient(90deg,transparent 0 18px,#ffffff66 18px 19px)}
+    .keeper{position:absolute;top:75px;left:50%;font-size:48px;transform:translateX(-50%);animation:dive 1s forwards}.ball{position:absolute;bottom:16px;left:50%;font-size:28px;animation:shot 1s forwards}.player{position:absolute;bottom:0;left:30%;font-size:48px}
+    @keyframes dive{to{left:KEEPER%;transform:translateX(-50%) rotate(ROTdeg)}}@keyframes shot{to{left:BALL%;bottom:BOTTOMpx;transform:scale(SCALE)}}
+    </style><div class="field" role="img" aria-label="축구 골대와 골키퍼, 페널티킥"><div class="crowd"></div><div class="goal"></div><span class="keeper">🧤🧍</span><span class="player">⚽🏃</span><span class="ball">⚽</span></div></html>'''.replace('KEEPER',str(keeper)).replace('ROT',str(-35 if keeper<50 else 35 if keeper>50 else 0)).replace('BALL',str(ball if done else 50)).replace('BOTTOM','125' if done else '16').replace('SCALE','.6' if done else '1'), height=270, scrolling=False)
+
+
+def render_weekly(owner):
+    st.title("🎁 이번 주 보너스")
+    st.caption("한국 시간 월~일 · 사용자별 주 1회 · 시작 후 게임은 고정됩니다. 실패해도 이번 주 기회는 사용됩니다.")
+    game = next((g for g in st.session_state.data.get("weekly_games", []) if g["owner"] == owner and g["week"] == week_key()), None)
+    if game is None:
+        if st.button("무작위 게임 시작", use_container_width=True):
+            commit(start_weekly(st.session_state.data, owner), "이번 주 게임을 골랐어요.")
+        return
+    if game["kind"] == "penalty":
+        st.subheader("⚽ 페널티킥 · 성공하면 1토큰")
+        render_penalty(game)
+        if not game["done"]:
+            for index, label in enumerate(["왼쪽", "중간", "오른쪽"]):
+                if st.button(label + "으로 슛!", key="shot_"+str(index), use_container_width=True):
+                    commit(finish_weekly(st.session_state.data, game["id"], [index]), "슛 결과를 확인하세요!")
+        else:
+            st.write("골키퍼 방향: " + ["왼쪽", "중간", "오른쪽"][game["keeper"]])
+    else:
+        st.subheader("🏛 한국사 퀴즈" if game["kind"] == "history" else "📚 수능 대비 영어 단어 퀴즈")
+        if not game["done"]:
+            with st.form("quiz_"+game["id"], enter_to_submit=False):
+                answers = [st.radio(q["question"], q["choices"], index=None, key=game["id"]+str(i)) for i,q in enumerate(game["questions"])]
+                if st.form_submit_button("정답 제출"):
+                    try: commit(finish_weekly(st.session_state.data, game["id"], answers), "퀴즈를 채점했어요.")
+                    except ValueError as exc: st.error(str(exc))
+        else:
+            for q, answer in zip(game["questions"], game["answers"]):
+                st.write(f"{'✅' if answer == q['answer'] else '❌'} {q['question']} · 정답: {q['answer']}")
+    if game["done"]:
+        st.success(f"이번 주 보너스: {game['score']}토큰 · 다음 주에 다시 만나요!")
+
+
+def navigate(page="home", owner=None):
+    st.session_state.page = page
+    if owner is not None: st.session_state.owner_page = owner
+    st.session_state.selected = None
+    st.session_state.add_open = page == "add"
+    st.rerun()
+
+
+def owner_cards(owner):
+    owned = [it for it in st.session_state.data["items"] if owner_of(it) == owner]
+    active = [k for k in ("lizard", "supplies") if any(it["kind"] == k for it in owned)]
+    if not active:
+        st.info("창이 없어도 지갑은 유지됩니다.")
+        return
+    kind = st.selectbox("창 종류", active, format_func=lambda k: "🦎 도마뱀" if k == "lizard" else "🧺 준비물")
+    for it in sorted([i for i in owned if i["kind"] == kind], key=lambda i:i["number"]):
+        with st.container(border=True, key="item_card_"+it["id"]):
+            if st.button(f"{it['number']}. {it['name']} →", key="open_"+it["id"], use_container_width=True):
+                st.session_state.selected = it["id"]
+                st.rerun()
+            if kind == "lizard":
+                d = remaining(it)
+                st.caption("먹이 · " + ("D-Day" if d == 0 else f"D-{d}"))
+                st.write(f"⭐ 도마뱀 평점 {rating_value(it.get('rating',0)):.1f}/5")
+
